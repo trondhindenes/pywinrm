@@ -26,20 +26,33 @@ class Response(object):
 
 class Session(object):
     # TODO implement context manager methods
-    def __init__(self, target, auth, **kwargs):
+    def __init__(self, target, auth, create_persistent_shell=False, **kwargs):
         username, password = auth
         self.url = self._build_url(target, kwargs.get('transport', 'plaintext'))
         self.protocol = Protocol(self.url,
                                  username=username, password=password, **kwargs)
+        self.shell_id = None
+        if create_persistent_shell:
+            self.shell_id = self.protocol.open_shell()
 
     def run_cmd(self, command, args=()):
-        # TODO optimize perf. Do not call open/close shell every time
-        shell_id = self.protocol.open_shell()
+        close_shell = False
+        if not self.shell_id:
+            shell_id = self.protocol.open_shell()
+            close_shell = True
+        elif self.shell_id:
+            shell_id = self.shell_id
         command_id = self.protocol.run_command(shell_id, command, args)
         rs = Response(self.protocol.get_command_output(shell_id, command_id))
         self.protocol.cleanup_command(shell_id, command_id)
-        self.protocol.close_shell(shell_id)
+        if close_shell:
+            self.protocol.close_shell(shell_id)
         return rs
+
+    def close_shell(self):
+        if not self.shell_id:
+            raise ValueError('No existing shell to close')
+        self.protocol.close_shell(self.shell_id)
 
     def run_ps(self, script):
         """base64 encodes a Powershell script and executes the powershell
